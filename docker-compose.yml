@@ -1,0 +1,85 @@
+version: '3'
+
+services:
+
+  db:
+    restart: always
+    container_name: app_db
+    image: postgres:14
+    expose:
+      - "5432"
+    env_file:
+      - .env
+    volumes:
+      - ./db:/var/lib/postgresql/data
+
+  app:
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/backend
+    container_name: app_backend
+    build:
+      dockerfile: ./Dockerfile
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  rabbit:
+    restart: always
+    container_name: app_rabbitmq
+    image: rabbitmq:3.10
+    expose:
+      - "5672"
+      - "15672"
+    volumes:
+      - ./rabbitmq_data:/var/lib/rabbitmq
+
+  celery:
+    container_name: app_celery
+    restart: always
+    build:
+      dockerfile: ./Dockerfile
+      context: .
+    volumes:
+      - ./backend:/backend
+    env_file:
+      - .env
+    command: celery -A config.celery worker --beat --loglevel=info
+    depends_on:
+      - app
+      - rabbit
+
+  nginx:
+    container_name: app_nginx
+    restart: always
+    image: nginx:1.21
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app
+    volumes:
+      - ./backend/static/:/static/
+      - ./backend/media/:/media/
+      - ./nginx/conf/:/etc/nginx/conf.d/:ro
+      - ./certbot/www:/var/www/certbot/:ro
+      - ./certbot/conf/:/etc/nginx/ssl/:ro
+
+  certbot:
+    image: certbot/certbot
+    container_name: app_certbot
+    depends_on:
+      - nginx
+    volumes:
+      - ./certbot/www/:/var/www/certbot/:rw
+      - ./certbot/conf/:/etc/letsencrypt/:rw
+    command: certonly --webroot --webroot-path=/var/www/certbot --email mishpzr@yandex.ru --agree-tos -d domain.name
+
+volumes:
+  certbot:
+  certs:
+
